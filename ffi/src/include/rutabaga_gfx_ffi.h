@@ -156,7 +156,6 @@ struct rutabaga_import_data {
         uint32_t strides[4];
         uint32_t offsets[4];
         uint64_t modifier;
-        bool guest_cpu_mappable;
     } info_3d;
 };
 
@@ -198,6 +197,9 @@ struct rutabaga_command {
 #ifdef RUTABAGA_GFX_FFI_UNSTABLE
     uint32_t num_in_fences;
     uint64_t *fence_ids;
+#else
+    uint32_t _reserved_1;
+    uint64_t *_reserved_2;
 #endif
 };
 

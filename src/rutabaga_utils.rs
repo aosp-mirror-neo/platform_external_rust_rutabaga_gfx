@@ -96,8 +96,6 @@ pub struct Resource3DInfo {
     pub strides: [u32; 4],
     pub offsets: [u32; 4],
     pub modifier: u64,
-    /// Whether the buffer can be accessed by the guest CPU.
-    pub guest_cpu_mappable: bool,
 }
 
 /// A unique identifier for a device.
@@ -369,6 +367,7 @@ pub type RutabagaResult<T> = std::result::Result<T, RutabagaError>;
 /// Flags for virglrenderer.  Copied from virglrenderer bindings.
 const VIRGLRENDERER_USE_EGL: u32 = 1 << 0;
 const VIRGLRENDERER_THREAD_SYNC: u32 = 1 << 1;
+#[allow(dead_code)]
 const VIRGLRENDERER_USE_GLX: u32 = 1 << 2;
 const VIRGLRENDERER_USE_SURFACELESS: u32 = 1 << 3;
 const VIRGLRENDERER_USE_GLES: u32 = 1 << 4;
@@ -446,11 +445,6 @@ impl VirglRendererFlags {
         self.set_flag(VIRGLRENDERER_THREAD_SYNC, v)
     }
 
-    /// Use GLX for context creation.
-    pub fn use_glx(self, v: bool) -> VirglRendererFlags {
-        self.set_flag(VIRGLRENDERER_USE_GLX, v)
-    }
-
     /// No surfaces required when creating context.
     pub fn use_surfaceless(self, v: bool) -> VirglRendererFlags {
         self.set_flag(VIRGLRENDERER_USE_SURFACELESS, v)
@@ -480,6 +474,7 @@ impl VirglRendererFlags {
 const STREAM_RENDERER_FLAGS_USE_EGL: u32 = 1 << 0;
 #[allow(dead_code)]
 const STREAM_RENDERER_FLAGS_THREAD_SYNC: u32 = 1 << 1;
+#[allow(dead_code)]
 const STREAM_RENDERER_FLAGS_USE_GLX: u32 = 1 << 2;
 const STREAM_RENDERER_FLAGS_USE_SURFACELESS: u32 = 1 << 3;
 const STREAM_RENDERER_FLAGS_USE_GLES: u32 = 1 << 4;
@@ -515,11 +510,6 @@ impl GfxstreamFlags {
     /// Use EGL for context creation.
     pub fn use_egl(self, v: bool) -> GfxstreamFlags {
         self.set_flag(STREAM_RENDERER_FLAGS_USE_EGL, v)
-    }
-
-    /// Use GLX for context creation.
-    pub fn use_glx(self, v: bool) -> GfxstreamFlags {
-        self.set_flag(STREAM_RENDERER_FLAGS_USE_GLX, v)
     }
 
     /// No surfaces required when creating context.
@@ -631,6 +621,7 @@ pub struct RutabagaChannel {
 #[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum RutabagaComponentType {
+    NoneSelected,
     Rutabaga2D,
     VirglRenderer,
     Gfxstream,
@@ -641,11 +632,12 @@ pub enum RutabagaComponentType {
 impl RutabagaComponentType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            RutabagaComponentType::CrossDomain => "crossdomain",
+            RutabagaComponentType::NoneSelected => "none_selected",
+            RutabagaComponentType::CrossDomain => "cross_domain",
             RutabagaComponentType::Gfxstream => "gfxstream",
             RutabagaComponentType::Magma => "magma",
-            RutabagaComponentType::Rutabaga2D => "rutabaga2d",
-            RutabagaComponentType::VirglRenderer => "virglrenderer",
+            RutabagaComponentType::Rutabaga2D => "rutabaga_2d",
+            RutabagaComponentType::VirglRenderer => "virgl_renderer",
         }
     }
 }

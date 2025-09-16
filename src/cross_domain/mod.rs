@@ -327,7 +327,7 @@ impl CrossDomainWorker {
         // fence data, that will break the expected order of events.  We need the guest to generate
         // a new fence before we can resume polling.
         //
-        // The CrossDomainJob queue gurantees a new fence has been generated before polling is
+        // The CrossDomainJob queue guarantees a new fence has been generated before polling is
         // resumed.
         if let Some(event) = events.first() {
             match event.connection_id {
@@ -841,9 +841,6 @@ impl RutabagaContext for CrossDomainContext {
                         strides: reqs.strides,
                         offsets: reqs.offsets,
                         modifier: reqs.modifier,
-                        guest_cpu_mappable: (resource_create_blob.blob_flags
-                            & RUTABAGA_BLOB_FLAG_USE_MAPPABLE)
-                            != 0,
                     };
 
                     Ok(RutabagaResource {
@@ -860,6 +857,9 @@ impl RutabagaContext for CrossDomainContext {
                         component_mask: 1 << (RutabagaComponentType::CrossDomain as u8),
                         size: resource_create_blob.size,
                         mapping: None,
+                        guest_cpu_mappable: (resource_create_blob.blob_flags
+                            & RUTABAGA_BLOB_FLAG_USE_MAPPABLE)
+                            != 0,
                     })
                 }
                 _ => Err(RutabagaError::InvalidCrossDomainItemType),
@@ -894,6 +894,7 @@ impl RutabagaContext for CrossDomainContext {
                         component_mask: 1 << (RutabagaComponentType::CrossDomain as u8),
                         size: resource_create_blob.size,
                         mapping: None,
+                        guest_cpu_mappable: false,
                     })
                 }
                 _ => Err(RutabagaError::InvalidCrossDomainItemType),
@@ -1086,6 +1087,7 @@ impl RutabagaComponent for CrossDomain {
             component_mask: 1 << (RutabagaComponentType::CrossDomain as u8),
             size: resource_create_blob.size,
             mapping: None,
+            guest_cpu_mappable: false,
         })
     }
 
