@@ -25,7 +25,7 @@ license {
 }
 
 rust_library {
-    name: "librutabaga_gfx_upstream",
+    name: "librutabaga_gfx",
     host_supported: true,
     vendor_available: true,
     crate_name: "rutabaga_gfx",
