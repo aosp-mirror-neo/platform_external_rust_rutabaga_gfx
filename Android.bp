@@ -24,6 +24,16 @@ license {
     ],
 }
 
+common_host_properties = {
+    features: ["vulkano"],
+    shared_libs: [
+        "libgfxstream_backend",
+    ],
+    rustlibs: [
+        "libvulkano",
+    ],
+}
+
 rust_library {
     name: "librutabaga_gfx",
     host_supported: true,
@@ -68,14 +78,8 @@ rust_library {
                 "liblog",
             ],
         },
-        linux_glibc_x86_64: {
-            features: ["vulkano"],
-            shared_libs: [
-                "libgfxstream_backend",
-            ],
-            rustlibs: [
-                "libvulkano",
-            ],
-        },
+        linux_musl_arm64: common_host_properties,
+        linux_musl_x86_64: common_host_properties,
+        linux_glibc_x86_64: common_host_properties,
     },
 }
