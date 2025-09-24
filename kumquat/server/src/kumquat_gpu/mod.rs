@@ -29,6 +29,7 @@ use rutabaga_gfx::ResourceCreate3D;
 use rutabaga_gfx::ResourceCreateBlob;
 use rutabaga_gfx::Rutabaga;
 use rutabaga_gfx::RutabagaBuilder;
+use rutabaga_gfx::RutabagaComponentType;
 use rutabaga_gfx::RutabagaError;
 use rutabaga_gfx::RutabagaFence;
 use rutabaga_gfx::RutabagaFenceHandler;
@@ -137,12 +138,12 @@ impl KumquatGpu {
             Some(renderer_features)
         };
 
-        let rutabaga = RutabagaBuilder::new(capset_mask, fence_handler)
+        let rutabaga = RutabagaBuilder::new(RutabagaComponentType::CrossDomain, capset_mask)
             .set_use_external_blob(true)
             .set_use_egl(true)
             .set_wsi(RutabagaWsi::Surfaceless)
             .set_renderer_features(renderer_features_opt)
-            .build()?;
+            .build(fence_handler, None)?;
 
         Ok(KumquatGpu {
             rutabaga,

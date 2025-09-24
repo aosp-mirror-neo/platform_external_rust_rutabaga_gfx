@@ -94,7 +94,6 @@ pub struct RutabagaResource {
     pub component_mask: u8,
     pub size: u64,
     pub mapping: Option<MemoryMapping>,
-    pub guest_cpu_mappable: bool,
 }
 
 /// The preserved fields of `RutabagaResource` that are saved and loaded across snapshot and
@@ -171,7 +170,6 @@ impl TryFrom<RutabagaResourceSnapshot> for RutabagaResource {
             size: snapshot.size,
             component_mask: snapshot.component_mask,
             mapping: None,
-            guest_cpu_mappable: false,
         })
     }
 }
@@ -190,7 +188,7 @@ pub trait RutabagaComponent {
         (0, 0)
     }
 
-    /// Implementations should return the capabilities of given a `capset_id` and `version`.  A
+    /// Implementations should return the capabilites of given a `capset_id` and `version`.  A
     /// zero-sized array is returned by default.
     fn get_capset(&self, _capset_id: u32, _version: u32) -> Vec<u8> {
         Vec::new()
@@ -236,7 +234,6 @@ pub trait RutabagaComponent {
             component_mask: 0,
             size: 0,
             mapping: None,
-            guest_cpu_mappable: false,
         })
     }
 
@@ -492,16 +489,15 @@ fn calculate_component(component_mask: u8) -> RutabagaResult<RutabagaComponentTy
     }
 
     match component_mask.trailing_zeros() {
-        0 => Ok(RutabagaComponentType::NoneSelected),
-        1 => Ok(RutabagaComponentType::Rutabaga2D),
-        2 => Ok(RutabagaComponentType::VirglRenderer),
-        3 => Ok(RutabagaComponentType::Gfxstream),
-        4 => Ok(RutabagaComponentType::CrossDomain),
+        0 => Ok(RutabagaComponentType::Rutabaga2D),
+        1 => Ok(RutabagaComponentType::VirglRenderer),
+        2 => Ok(RutabagaComponentType::Gfxstream),
+        3 => Ok(RutabagaComponentType::CrossDomain),
         _ => Err(RutabagaError::InvalidComponent),
     }
 }
 
-/// The global library handle used to query capability sets, create resources and contexts.
+/// The global libary handle used to query capability sets, create resources and contexts.
 ///
 /// Currently, Rutabaga only supports one default component.  Many components running at the
 /// same time is a stretch goal of Rutabaga GFX.
@@ -658,7 +654,7 @@ impl Rutabaga {
         Ok(self.capset_info[idx])
     }
 
-    /// Gets the version and size for the capability set `index`.
+    /// Gets the version and size for the capabilty set `index`.
     pub fn get_capset_info(&self, index: u32) -> RutabagaResult<(u32, u32, u32)> {
         let capset_info = self.capset_index_to_component_info(index)?;
 
@@ -1048,7 +1044,7 @@ impl Rutabaga {
     }
 
     /// Returns the 3D info associated with the resource, if any.
-    pub fn resource3d_info(&self, resource_id: u32) -> RutabagaResult<Resource3DInfo> {
+    pub fn query(&self, resource_id: u32) -> RutabagaResult<Resource3DInfo> {
         let resource = self
             .resources
             .get(&resource_id)
@@ -1057,16 +1053,6 @@ impl Rutabaga {
         resource
             .info_3d
             .ok_or(MesaError::WithContext("no 3d info available").into())
-    }
-
-    /// Returns true if the resource is mappable by the guest CPU.
-    pub fn guest_cpu_mappable(&self, resource_id: u32) -> RutabagaResult<bool> {
-        let resource = self
-            .resources
-            .get(&resource_id)
-            .ok_or(RutabagaError::InvalidResourceId)?;
-
-        Ok(resource.guest_cpu_mappable)
     }
 
     /// Exports a blob resource.  See virtio-gpu spec for blob flag use flags.
@@ -1229,8 +1215,8 @@ impl Rutabaga {
 }
 
 /// Rutabaga Builder, following the Rust builder pattern.
+#[derive(Clone)]
 pub struct RutabagaBuilder {
-    fence_handler: RutabagaFenceHandler,
     display_width: u32,
     display_height: u32,
     default_component: RutabagaComponentType,
@@ -1240,28 +1226,25 @@ pub struct RutabagaBuilder {
     channels: Option<Vec<RutabagaChannel>>,
     debug_handler: Option<RutabagaDebugHandler>,
     renderer_features: Option<String>,
-    server_descriptor: Option<OwnedDescriptor>,
 }
 
 impl RutabagaBuilder {
     /// Create new a RutabagaBuilder.
-    pub fn new(capset_mask: u64, fence_handler: RutabagaFenceHandler) -> RutabagaBuilder {
+    pub fn new(default_component: RutabagaComponentType, capset_mask: u64) -> RutabagaBuilder {
         let virglrenderer_flags = VirglRendererFlags::new()
             .use_thread_sync(true)
             .use_async_fence_cb(true);
         let gfxstream_flags = GfxstreamFlags::new();
         RutabagaBuilder {
-            fence_handler,
             display_width: RUTABAGA_DEFAULT_WIDTH,
             display_height: RUTABAGA_DEFAULT_HEIGHT,
-            default_component: RutabagaComponentType::NoneSelected,
+            default_component,
             gfxstream_flags,
             virglrenderer_flags,
             capset_mask,
             channels: None,
             debug_handler: None,
             renderer_features: None,
-            server_descriptor: None,
         }
     }
 
@@ -1277,12 +1260,6 @@ impl RutabagaBuilder {
         self
     }
 
-    /// Set the default component for the RutabagaBuilder
-    pub fn set_default_component(mut self, component: RutabagaComponentType) -> RutabagaBuilder {
-        self.default_component = component;
-        self
-    }
-
     /// Sets use EGL flags in gfxstream + virglrenderer.
     pub fn set_use_egl(mut self, v: bool) -> RutabagaBuilder {
         self.gfxstream_flags = self.gfxstream_flags.use_egl(v);
@@ -1294,6 +1271,13 @@ impl RutabagaBuilder {
     pub fn set_use_gles(mut self, v: bool) -> RutabagaBuilder {
         self.gfxstream_flags = self.gfxstream_flags.use_gles(v);
         self.virglrenderer_flags = self.virglrenderer_flags.use_gles(v);
+        self
+    }
+
+    /// Sets use GLX flags in gfxstream + virglrenderer.
+    pub fn set_use_glx(mut self, v: bool) -> RutabagaBuilder {
+        self.gfxstream_flags = self.gfxstream_flags.use_glx(v);
+        self.virglrenderer_flags = self.virglrenderer_flags.use_glx(v);
         self
     }
 
@@ -1360,21 +1344,16 @@ impl RutabagaBuilder {
         self
     }
 
-    /// Set server descriptor for the RutabagaBuilder
-    pub fn set_server_descriptor(
-        mut self,
-        server_descriptor: Option<OwnedDescriptor>,
-    ) -> RutabagaBuilder {
-        self.server_descriptor = server_descriptor;
-        self
-    }
-
     /// Builds Rutabaga and returns a handle to it.
     ///
     /// This should be only called once per every virtual machine instance.  Rutabaga tries to
-    /// initialize all 3D components which have been built. In 2D mode, only the 2D component is
+    /// intialize all 3D components which have been built. In 2D mode, only the 2D component is
     /// initialized.
-    pub fn build(mut self) -> RutabagaResult<Rutabaga> {
+    pub fn build(
+        mut self,
+        fence_handler: RutabagaFenceHandler,
+        #[allow(unused_variables)] rutabaga_server_descriptor: Option<OwnedDescriptor>,
+    ) -> RutabagaResult<Rutabaga> {
         let mut rutabaga_components: Map<RutabagaComponentType, Box<dyn RutabagaComponent>> =
             Default::default();
 
@@ -1444,8 +1423,8 @@ impl RutabagaBuilder {
             if self.default_component == RutabagaComponentType::VirglRenderer {
                 if let Ok(virgl) = VirglRenderer::init(
                     self.virglrenderer_flags,
-                    self.fence_handler.clone(),
-                    self.server_descriptor,
+                    fence_handler.clone(),
+                    rutabaga_server_descriptor,
                 ) {
                     rutabaga_components.insert(RutabagaComponentType::VirglRenderer, virgl);
 
@@ -1466,7 +1445,7 @@ impl RutabagaBuilder {
                     self.display_height,
                     self.gfxstream_flags,
                     self.renderer_features,
-                    self.fence_handler.clone(),
+                    fence_handler.clone(),
                     self.debug_handler.clone(),
                 )?;
 
@@ -1478,17 +1457,17 @@ impl RutabagaBuilder {
             }
 
             if capset_enabled(RUTABAGA_CAPSET_MAGMA) {
-                let magma = MagmaVirtioGpu::init(self.fence_handler.clone())?;
+                let magma = MagmaVirtioGpu::init(fence_handler.clone())?;
                 rutabaga_components.insert(RutabagaComponentType::Magma, magma);
             }
 
-            let cross_domain = CrossDomain::init(self.channels, self.fence_handler.clone())?;
+            let cross_domain = CrossDomain::init(self.channels, fence_handler.clone())?;
             rutabaga_components.insert(RutabagaComponentType::CrossDomain, cross_domain);
             push_capset(RUTABAGA_CAPSET_CROSS_DOMAIN);
         }
 
         if self.default_component == RutabagaComponentType::Rutabaga2D {
-            let rutabaga_2d = Rutabaga2D::init(self.fence_handler.clone())?;
+            let rutabaga_2d = Rutabaga2D::init(fence_handler.clone())?;
             rutabaga_components.insert(RutabagaComponentType::Rutabaga2D, rutabaga_2d);
         }
 
@@ -1500,7 +1479,7 @@ impl RutabagaBuilder {
             components: rutabaga_components,
             default_component: self.default_component,
             capset_info: rutabaga_capsets,
-            fence_handler: self.fence_handler,
+            fence_handler,
         })
     }
 }
@@ -1508,36 +1487,27 @@ impl RutabagaBuilder {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use std::fs;
 
     fn new_2d() -> Rutabaga {
-        RutabagaBuilder::new(0, RutabagaHandler::new(|_| {}))
-            .set_default_component(RutabagaComponentType::Rutabaga2D)
-            .build()
+        RutabagaBuilder::new(RutabagaComponentType::Rutabaga2D, 0)
+            .build(RutabagaHandler::new(|_| {}), None)
             .unwrap()
     }
 
     #[test]
     fn snapshot_restore_2d_no_resources() {
-        let mut snapshot_dir = std::env::temp_dir();
-        snapshot_dir.push(format!("rutabaga_snapshot"));
-
-        fs::create_dir(&snapshot_dir).unwrap();
+        let snapshot_dir = tempfile::tempdir().unwrap();
 
         let rutabaga1 = new_2d();
-        rutabaga1.snapshot(snapshot_dir.as_path()).unwrap();
+        rutabaga1.snapshot(snapshot_dir.path()).unwrap();
 
         let mut rutabaga1 = new_2d();
-        rutabaga1.restore(snapshot_dir.as_path()).unwrap();
-
-        fs::remove_dir_all(&snapshot_dir).unwrap();
+        rutabaga1.restore(snapshot_dir.path()).unwrap();
     }
 
     #[test]
     fn snapshot_restore_2d_one_resource() {
-        let mut snapshot_dir = std::env::temp_dir();
-        snapshot_dir.push(format!("rutabaga_snapshot2"));
-        fs::create_dir(&snapshot_dir).unwrap();
+        let snapshot_dir = tempfile::tempdir().unwrap();
 
         let resource_id = 123;
         let resource_create_3d = ResourceCreate3D {
@@ -1566,10 +1536,10 @@ mod tests {
                 }],
             )
             .unwrap();
-        rutabaga1.snapshot(snapshot_dir.as_path()).unwrap();
+        rutabaga1.snapshot(snapshot_dir.path()).unwrap();
 
         let mut rutabaga2 = new_2d();
-        rutabaga2.restore(snapshot_dir.as_path()).unwrap();
+        rutabaga2.restore(snapshot_dir.path()).unwrap();
 
         assert_eq!(rutabaga2.resources.len(), 1);
         let rutabaga_resource = rutabaga2.resources.get(&resource_id).unwrap();
@@ -1584,7 +1554,5 @@ mod tests {
         );
         // NOTE: We attached an backing iovec, but it should be gone post-restore.
         assert!(rutabaga_resource.backing_iovecs.is_none());
-
-        fs::remove_dir_all(&snapshot_dir).unwrap();
     }
 }
