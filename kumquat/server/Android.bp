@@ -24,7 +24,7 @@ rust_binary {
         "gfxstream",
     ],
     rustlibs: [
-        "librutabaga_gfx",
+        "librutabaga_gfx_upstream",
         "liblibc",
         "liblog_rust",
         "libmesa3d_util_rutabaga",
