@@ -32,4 +32,5 @@ rust_library {
         "libmesa3d_util_rutabaga",
         "libzerocopy",
     ],
+    apex_available: ["com.android.virt"],
 }

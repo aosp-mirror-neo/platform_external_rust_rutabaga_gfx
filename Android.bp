@@ -51,6 +51,7 @@ rust_library {
         "liblibc",
         "liblog_rust",
         "libmesa3d_util_rutabaga",
+        "libmesa3d_magma_android_rutabaga",
         "libserde",
         "libserde_json",
         "libthiserror",
