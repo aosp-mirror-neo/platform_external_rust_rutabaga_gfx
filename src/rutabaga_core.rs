@@ -28,7 +28,6 @@ use crate::rutabaga_utils::GfxstreamFlags;
 use crate::rutabaga_utils::Resource3DInfo;
 use crate::rutabaga_utils::ResourceCreate3D;
 use crate::rutabaga_utils::ResourceCreateBlob;
-use crate::rutabaga_utils::RutabagaChannel;
 use crate::rutabaga_utils::RutabagaComponentType;
 use crate::rutabaga_utils::RutabagaDebugHandler;
 use crate::rutabaga_utils::RutabagaError;
@@ -36,6 +35,7 @@ use crate::rutabaga_utils::RutabagaFence;
 use crate::rutabaga_utils::RutabagaFenceHandler;
 use crate::rutabaga_utils::RutabagaImportData;
 use crate::rutabaga_utils::RutabagaIovec;
+use crate::rutabaga_utils::RutabagaPath;
 use crate::rutabaga_utils::RutabagaResult;
 use crate::rutabaga_utils::RutabagaWsi;
 use crate::rutabaga_utils::Transfer3D;
@@ -60,6 +60,7 @@ use crate::snapshot::RutabagaSnapshotReader;
 use crate::snapshot::RutabagaSnapshotWriter;
 #[cfg(feature = "virgl_renderer")]
 use crate::virgl_renderer::VirglRenderer;
+use crate::RutabagaPaths;
 
 const RUTABAGA_DEFAULT_WIDTH: u32 = 1280;
 const RUTABAGA_DEFAULT_HEIGHT: u32 = 1024;
@@ -69,7 +70,8 @@ const RUTABAGA_DEFAULT_HEIGHT: u32 = 1024;
 pub struct Rutabaga2DInfo {
     pub width: u32,
     pub height: u32,
-    pub host_mem: Vec<u8>,
+    pub host_mem: Option<Vec<u8>>,
+    pub scanout_stride: Option<u32>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -163,7 +165,8 @@ impl TryFrom<RutabagaResourceSnapshot> for RutabagaResource {
                 Rutabaga2DInfo {
                     width: info.width,
                     height: info.height,
-                    host_mem: vec![0; usize::try_from(size).unwrap()],
+                    host_mem: Some(vec![0; usize::try_from(size).unwrap()]),
+                    scanout_stride: None,
                 }
             }),
             info_3d: snapshot.info_3d,
@@ -868,7 +871,7 @@ impl Rutabaga {
         component.transfer_write(ctx_id, resource, transfer, buf)
     }
 
-    /// 1) If specified, copies to `buf` from the host resource.
+    /// 1) If specified, copies to `buf` from the resource (host or guest).
     /// 2) Otherwise, for HOST3D_GUEST resources, copies to the attached iovecs from the host
     ///    resource.  For HOST3D resources, this may invalidate caches, though this feature is
     ///    unused by guest userspace.
@@ -904,6 +907,29 @@ impl Rutabaga {
             .ok_or(RutabagaError::InvalidResourceId)?;
 
         component.resource_flush(resource)
+    }
+
+    pub fn set_scanout(
+        &mut self,
+        _scanout_id: u32,
+        resource_id: u32,
+        info: Option<Resource3DInfo>)
+    -> RutabagaResult<()> {
+        let resource = self
+            .resources
+            .get_mut(&resource_id)
+            .ok_or(RutabagaError::InvalidResourceId)?;
+
+        if let Some(info_val) = info {
+            let info_2d = resource
+                .info_2d
+                .as_mut()
+                .ok_or(RutabagaError::Invalid2DInfo)?;
+
+           info_2d.scanout_stride = Some(info_val.strides[0]);
+        }
+
+        Ok(())
     }
 
     /// Creates a blob resource with the `ctx_id` and `resource_create_blob` metadata.
@@ -1238,7 +1264,7 @@ pub struct RutabagaBuilder {
     gfxstream_flags: GfxstreamFlags,
     virglrenderer_flags: VirglRendererFlags,
     capset_mask: u64,
-    channels: Option<Vec<RutabagaChannel>>,
+    paths: Option<RutabagaPaths>,
     debug_handler: Option<RutabagaDebugHandler>,
     renderer_features: Option<String>,
     server_descriptor: Option<OwnedDescriptor>,
@@ -1259,7 +1285,7 @@ impl RutabagaBuilder {
             gfxstream_flags,
             virglrenderer_flags,
             capset_mask,
-            channels: None,
+            paths: None,
             debug_handler: None,
             renderer_features: None,
             server_descriptor: None,
@@ -1337,12 +1363,9 @@ impl RutabagaBuilder {
         self
     }
 
-    /// Set rutabaga channels for the RutabagaBuilder
-    pub fn set_rutabaga_channels(
-        mut self,
-        channels: Option<Vec<RutabagaChannel>>,
-    ) -> RutabagaBuilder {
-        self.channels = channels;
+    /// Set rutabaga paths for the RutabagaBuilder
+    pub fn set_rutabaga_paths(mut self, paths: Option<Vec<RutabagaPath>>) -> RutabagaBuilder {
+        self.paths = paths;
         self
     }
 
@@ -1447,6 +1470,7 @@ impl RutabagaBuilder {
                     self.virglrenderer_flags,
                     self.fence_handler.clone(),
                     self.server_descriptor,
+                    self.paths.clone(),
                 ) {
                     rutabaga_components.insert(RutabagaComponentType::VirglRenderer, virgl);
 
@@ -1483,7 +1507,7 @@ impl RutabagaBuilder {
                 rutabaga_components.insert(RutabagaComponentType::Magma, magma);
             }
 
-            let cross_domain = CrossDomain::init(self.channels, self.fence_handler.clone())?;
+            let cross_domain = CrossDomain::init(self.paths.clone(), self.fence_handler.clone())?;
             rutabaga_components.insert(RutabagaComponentType::CrossDomain, cross_domain);
             push_capset(RUTABAGA_CAPSET_CROSS_DOMAIN);
         }
