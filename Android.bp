@@ -78,6 +78,9 @@ rust_library {
                 "libcutils",
                 "liblog",
             ],
+            rustlibs: [
+                "libnativewindow_rs",
+            ],
         },
         linux_musl_arm64: common_host_properties,
         linux_musl_x86_64: common_host_properties,
