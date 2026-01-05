@@ -4,9 +4,8 @@
 project(
   'rutabaga_gfx',
   ['rust', 'c'],
-  meson_version: '>=1.3.0',
   license : 'BSD-3-Clause AND MIT',
-  version: '0.1.75',
+  version: '0.1.76',
   meson_version: '>=1.3.0',
   default_options : [
     'rust_std=2021',
@@ -45,7 +44,7 @@ endif
 if with_virgl_renderer
   dep_virgl = dependency('virglrenderer', version: '>= 1.0.0')
   rutabaga_args += ['--cfg', 'feature="virgl_renderer"']
-  dep_rutabaga_gfx += virgl_renderer
+  dep_rutabaga_gfx += dep_virgl
 endif
 
 if with_kumquat
