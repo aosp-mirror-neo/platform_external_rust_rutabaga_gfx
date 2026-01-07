@@ -42,9 +42,11 @@ use mesa3d_util::RawDescriptor;
 use mesa3d_util::MESA_HANDLE_TYPE_MEM_DMABUF;
 use mesa3d_util::MESA_HANDLE_TYPE_MEM_OPAQUE_FD;
 use mesa3d_util::MESA_HANDLE_TYPE_MEM_SHM;
+#[cfg(virgl_renderer_unstable)]
 use mesa3d_util::MESA_HANDLE_TYPE_SIGNAL_SYNC_FD;
 
 use crate::generated::virgl_renderer_bindings::*;
+use crate::handle::RutabagaHandle;
 use crate::renderer_utils::ret_to_res;
 use crate::renderer_utils::RutabagaCookie;
 use crate::renderer_utils::VirglBox;
@@ -82,7 +84,12 @@ fn is_valid_gpu_path(rpath: &RutabagaPath) -> bool {
     }
 
     canonicalize(&rpath.path)
-        .map(|path| path.starts_with("/dev/dri/renderD") && path.exists())
+        .map(|path| {
+            path.to_string_lossy()
+                .to_string()
+                .starts_with("/dev/dri/renderD")
+                && path.exists()
+        })
         .unwrap_or_default()
 }
 
@@ -111,13 +118,15 @@ fn import_resource(resource: &mut RutabagaResource) -> RutabagaResult<()> {
         return Ok(());
     }
 
-    if let Some(handle) = &resource.handle {
-        if handle.handle_type == MESA_HANDLE_TYPE_MEM_DMABUF {
-            let dmabuf_fd = handle
+    if let Some(mesa_handle) = resource.handle.as_ref().and_then(|h| h.as_mesa_handle()) {
+        #[cfg(target_os = "linux")]
+        if mesa_handle.handle_type == MESA_HANDLE_TYPE_MEM_DMABUF {
+            let dmabuf_fd = mesa_handle
                 .os_handle
                 .try_clone()
                 .map_err(MesaError::IoError)?
                 .into_raw_descriptor();
+
             // SAFETY:
             // Safe because we are being passed a valid fd
             unsafe {
@@ -141,6 +150,7 @@ fn import_resource(resource: &mut RutabagaResource) -> RutabagaResult<()> {
                     libc::close(dmabuf_fd);
                     return Ok(());
                 }
+
                 resource.component_mask |= 1 << (RutabagaComponentType::VirglRenderer as u8);
             }
         }
@@ -285,10 +295,9 @@ extern "C" fn get_drm_fd(cookie: *mut c_void) -> c_int {
                 .map(|rpath| rpath.path.clone())
         });
 
-        // Try to open the path and return its fd
-        gpu_path
-            .and_then(|path| {
-                info!("virglrenderer: using GPU path {path:?}");
+        match gpu_path {
+            Some(path) => {
+                info!("using provided GPU path {path:?}");
                 OpenOptions::new()
                     .read(true)
                     .write(true)
@@ -296,13 +305,16 @@ extern "C" fn get_drm_fd(cookie: *mut c_void) -> c_int {
                     .open(path)
                     .inspect_err(|err| error!("failed to open GPU path: {err}"))
                     .ok()
-            })
-            // Convert file to raw fd, the ownership of the fd is
-            // transferred to virglrenderer.
-            .map(|file| file.into_raw_fd())
-            // If no path was provided or opening it failed, use the
-            // default drm fd.
-            .unwrap_or(DEFAULT_DRM_FD)
+                    // Convert file to raw fd, the ownership of the fd is
+                    // transferred to virglrenderer.
+                    .map(|file| file.into_raw_fd())
+                    .unwrap_or(DEFAULT_DRM_FD)
+            }
+            None => {
+                info!("no valid GPU path provided");
+                DEFAULT_DRM_FD
+            }
+        }
     })
     .unwrap_or_else(|_| abort())
 }
@@ -492,9 +504,9 @@ impl VirglRenderer {
         })
     }
 
-    fn export_blob(&self, resource_id: u32) -> RutabagaResult<Arc<MesaHandle>> {
+    fn export_blob(&self, resource_id: u32) -> RutabagaResult<Arc<RutabagaHandle>> {
         let mut fd_type = 0;
-        let mut fd = 0;
+        let mut fd = -1;
         // TODO(b/315870313): Add safety comment
         #[allow(clippy::undocumented_unsafe_blocks)]
         let ret =
@@ -515,10 +527,13 @@ impl VirglRenderer {
             }
         };
 
-        Ok(Arc::new(MesaHandle {
-            os_handle: handle,
-            handle_type,
-        }))
+        Ok(Arc::new(
+            MesaHandle {
+                os_handle: handle,
+                handle_type,
+            }
+            .into(),
+        ))
     }
 }
 
@@ -622,7 +637,7 @@ impl RutabagaComponent for VirglRenderer {
         let ret = unsafe { virgl_renderer_resource_create(&mut args, null_mut(), 0) };
         ret_to_res(ret)?;
 
-        let mut resource_handle: Option<Arc<MesaHandle>> = self.export_blob(resource_id).ok();
+        let mut resource_handle: Option<Arc<RutabagaHandle>> = self.export_blob(resource_id).ok();
         let mut resource_info_3d: Option<Resource3DInfo> = self.query(resource_id).ok();
 
         // Fallback if export_blob and query both fail to return a DMABUF handle or 3D info.
@@ -650,10 +665,13 @@ impl RutabagaComponent for VirglRenderer {
                     // SAFETY: `fd` is validated to be >= 0 and uniquely owned.
                     let owned_fd = unsafe { OwnedDescriptor::from_raw_descriptor(fd) };
 
-                    resource_handle = Some(Arc::new(MesaHandle {
-                        os_handle: owned_fd,
-                        handle_type: MESA_HANDLE_TYPE_MEM_DMABUF,
-                    }));
+                    resource_handle = Some(Arc::new(
+                        MesaHandle {
+                            os_handle: owned_fd,
+                            handle_type: MESA_HANDLE_TYPE_MEM_DMABUF,
+                        }
+                        .into(),
+                    ));
                     resource_info_3d = Some(Resource3DInfo {
                         width: info_ext.base.width,
                         height: info_ext.base.height,
@@ -680,7 +698,6 @@ impl RutabagaComponent for VirglRenderer {
             component_mask: 1 << (RutabagaComponentType::VirglRenderer as u8),
             size: 0,
             mapping: None,
-            guest_cpu_mappable: false,
         })
     }
 
@@ -820,7 +837,7 @@ impl RutabagaComponent for VirglRenderer {
         resource_id: u32,
         resource_create_blob: ResourceCreateBlob,
         mut iovec_opt: Option<Vec<RutabagaIovec>>,
-        _handle_opt: Option<MesaHandle>,
+        _handle_opt: Option<RutabagaHandle>,
     ) -> RutabagaResult<RutabagaResource> {
         let mut iovec_ptr = null_mut();
         let mut num_iovecs = 0;
@@ -861,8 +878,30 @@ impl RutabagaComponent for VirglRenderer {
             component_mask: 1 << (RutabagaComponentType::VirglRenderer as u8),
             size: resource_create_blob.size,
             mapping: None,
-            guest_cpu_mappable: false,
         })
+    }
+
+    fn map_placed(&self, _resource_id: u32, _addr: u64) -> RutabagaResult<()> {
+        #[cfg(virgl_renderer_unstable)]
+        {
+            if let Some(addr) = _addr {
+                // SAFETY:
+                // Safe because virglrenderer is initialized and addr is a valid pointer provided
+                // by the caller.
+                let ret = unsafe {
+                    virgl_renderer_resource_map_fixed(_resource_id, addr as *mut libc::c_void)
+                };
+                if ret != 0 {
+                    return Err(RutabagaError::MappingFailed(ret));
+                }
+                Ok(())
+            } else {
+                // virgl_renderer_resource_map_fixed requires a fixed address
+                Err(MesaError::Unsupported.into())
+            }
+        }
+        #[cfg(not(virgl_renderer_unstable))]
+        Err(MesaError::Unsupported.into())
     }
 
     fn map(&self, resource_id: u32) -> RutabagaResult<MesaMapping> {
