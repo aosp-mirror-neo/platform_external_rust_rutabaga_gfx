@@ -1,0 +1,111 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_license//rules:license.bzl", "license")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_shared_library")
+
+package(
+    default_applicable_licenses = [":license"],
+    default_visibility = ["//visibility:public"],
+)
+
+license(
+    name = "license",
+    package_name = "rutabaga_gfx",
+    copyright_notice = "Copyright 2023 The ChromiumOS Authors",
+    license_kinds = [
+        "@rules_license//licenses/spdx:BSD-3-Clause",
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE",
+    package_url = "https://github.com/google/crosvm",
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["LICENSE"])
+
+rust_library(
+    name = "mesa3d_util",
+    srcs = glob(["third_party/mesa3d/src/util/rust/**/*.rs"]),
+    edition = "2021",
+    proc_macro_deps = [
+        "@remain",
+        "@thiserror-impl",
+        "@zerocopy-derive",
+    ],
+    deps = [
+        "@cfg-if",
+        "@log",
+        "@thiserror",
+        "@zerocopy",
+    ] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["@rustix"],
+    }),
+)
+
+rust_library(
+    name = "rutabaga_gfx",
+    srcs = glob(["src/**/*.rs"]),
+    crate_features = [
+        "gfxstream",
+        "gfxstream_unstable",
+        "fence_passing_option1",
+    ],
+    edition = "2021",
+    proc_macro_deps = [
+        "@remain",
+        "@thiserror-impl",
+    ],
+    deps = [
+        ":mesa3d_util",
+        "@cfg-if",
+        "@gfxstream//host:gfxstream_backend_shared",
+        "@libc",
+        "@log",
+        "@serde",
+        "@serde_json",
+        "@thiserror",
+        "@zerocopy",
+    ] + select({
+        "@platforms//os:windows": [
+            "@winapi",
+            "@winapi-x86_64-pc-windows-gnu",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rust_shared_library(
+    name = "rutabaga_ffi",
+    srcs = ["ffi/src/lib.rs"],
+    crate_features = [
+        "goldfish",
+        "rutabaga_gfx/gfxstream",
+    ],
+    edition = "2021",
+    rustc_flags = [
+        "--cfg=goldfish",
+    ],
+    deps = [
+        ":rutabaga_gfx",
+        "@libc",
+        "@log",
+        "@once_cell",
+    ],
+)
+
+cc_library(
+    name = "rutabaga_c_ffi",
+    hdrs = [
+        "ffi/src/include/rutabaga_gfx_ffi.h",
+        "ffi/src/include/rutabaga_gfx_ffi_goldfish.h",
+    ],
+    defines = ["RUTABAGA_GFX_FFI_UNSTABLE"],
+    include_prefix = "rutabaga_gfx",
+    linkopts = select({
+        "@platforms//os:windows": ["/DEFAULTLIB:Ntdll.lib"],
+        "//conditions:default": [],
+    }),
+    strip_include_prefix = "ffi/src/include",
+    deps = [":rutabaga_ffi"],
+)
