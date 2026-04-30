@@ -46,15 +46,15 @@ rust_library(
 rust_library(
     name = "rutabaga_gfx",
     srcs = glob(["src/**/*.rs"]),
-    crate_features = [
-        "gfxstream",
-        "gfxstream_unstable",
-        "fence_passing_option1",
-    ],
+    crate_features = ["gfxstream"],
     edition = "2021",
     proc_macro_deps = [
         "@remain",
         "@thiserror-impl",
+    ],
+    rustc_flags = [
+        "--cfg=gfxstream_unstable",
+        # TODO: Do we want this? "--cfg=fence_passing_option1",
     ],
     deps = [
         ":mesa3d_util",
@@ -78,14 +78,8 @@ rust_library(
 rust_shared_library(
     name = "rutabaga_ffi",
     srcs = ["ffi/src/lib.rs"],
-    crate_features = [
-        "goldfish",
-        "rutabaga_gfx/gfxstream",
-    ],
     edition = "2021",
-    rustc_flags = [
-        "--cfg=goldfish",
-    ],
+    rustc_flags = ["--cfg=goldfish"],
     deps = [
         ":rutabaga_gfx",
         "@libc",
