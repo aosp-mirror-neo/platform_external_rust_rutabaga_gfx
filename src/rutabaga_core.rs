@@ -31,6 +31,7 @@ use crate::rutabaga_utils::ResourceCreate3D;
 use crate::rutabaga_utils::ResourceCreateBlob;
 use crate::rutabaga_utils::RutabagaComponentType;
 use crate::rutabaga_utils::RutabagaDebugHandler;
+use crate::rutabaga_utils::RutabagaDebugHandlerEx;
 use crate::rutabaga_utils::RutabagaError;
 use crate::rutabaga_utils::RutabagaFence;
 use crate::rutabaga_utils::RutabagaFenceHandler;
@@ -1287,6 +1288,7 @@ pub struct RutabagaBuilder {
     capset_mask: u64,
     paths: Option<RutabagaPaths>,
     debug_handler: Option<RutabagaDebugHandler>,
+    debug_handler_ex: Option<RutabagaDebugHandlerEx>,
     renderer_features: Option<String>,
     server_descriptor: Option<OwnedDescriptor>,
 }
@@ -1308,6 +1310,7 @@ impl RutabagaBuilder {
             capset_mask,
             paths: None,
             debug_handler: None,
+            debug_handler_ex: None,
             renderer_features: None,
             server_descriptor: None,
         }
@@ -1396,6 +1399,15 @@ impl RutabagaBuilder {
         debug_handler: Option<RutabagaDebugHandler>,
     ) -> RutabagaBuilder {
         self.debug_handler = debug_handler;
+        self
+    }
+
+    /// Set debug handler with location info for the RutabagaBuilder
+    pub fn set_debug_handler_ex(
+        mut self,
+        debug_handler_ex: Option<RutabagaDebugHandlerEx>,
+    ) -> RutabagaBuilder {
+        self.debug_handler_ex = debug_handler_ex;
         self
     }
 
@@ -1514,6 +1526,7 @@ impl RutabagaBuilder {
                     self.renderer_features,
                     self.fence_handler.clone(),
                     self.debug_handler.clone(),
+                    self.debug_handler_ex.clone(),
                 )?;
 
                 rutabaga_components.insert(RutabagaComponentType::Gfxstream, gfxstream);

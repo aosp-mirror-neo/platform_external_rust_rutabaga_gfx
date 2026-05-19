@@ -10,6 +10,7 @@
 
 use std::convert::TryInto;
 use std::ffi::CString;
+use std::ffi::CStr;
 use std::io::IoSlice;
 use std::io::IoSliceMut;
 use std::mem::size_of;
@@ -50,6 +51,8 @@ use crate::rutabaga_utils::ResourceCreateBlob;
 use crate::rutabaga_utils::RutabagaComponentType;
 use crate::rutabaga_utils::RutabagaDebug;
 use crate::rutabaga_utils::RutabagaDebugHandler;
+use crate::rutabaga_utils::RutabagaDebugEx;
+use crate::rutabaga_utils::RutabagaDebugHandlerEx;
 use crate::rutabaga_utils::RutabagaError;
 use crate::rutabaga_utils::RutabagaFence;
 use crate::rutabaga_utils::RutabagaFenceHandler;
@@ -76,6 +79,7 @@ const STREAM_RENDERER_PARAM_WIN0_WIDTH: u64 = 4;
 const STREAM_RENDERER_PARAM_WIN0_HEIGHT: u64 = 5;
 const STREAM_RENDERER_PARAM_DEBUG_CALLBACK: u64 = 6;
 const STREAM_RENDERER_PARAM_RENDERER_FEATURES: u64 = 11;
+const STREAM_RENDERER_PARAM_DEBUG_CALLBACK_EX: u64 = 7;
 
 #[cfg(gfxstream_unstable)]
 const STREAM_RENDERER_IMPORT_FLAG_VULKAN_INFO: u32 = RUTABAGA_IMPORT_FLAG_VULKAN_INFO;
@@ -127,6 +131,15 @@ pub type stream_renderer_fence = RutabagaFence;
 
 #[allow(non_camel_case_types)]
 pub type stream_renderer_debug = RutabagaDebug;
+
+#[repr(C)]
+pub struct stream_renderer_debug_ex {
+    pub debug_type: u32,
+    pub file: *const c_char,
+    pub line: c_int,
+    pub function: *const c_char,
+    pub message: *const c_char,
+}
 
 #[cfg(gfxstream_unstable)]
 #[repr(C)]
@@ -427,6 +440,31 @@ extern "C" fn gfxstream_debug_callback(cookie: *mut c_void, debug: *const stream
     .unwrap_or_else(|_| abort())
 }
 
+extern "C" fn gfxstream_debug_callback_ex(cookie: *mut c_void, debug: *const stream_renderer_debug_ex) {
+    catch_unwind(|| {
+        assert!(!cookie.is_null());
+        let cookie = unsafe { &*(cookie as *mut RutabagaCookie) };
+        if let Some(handler) = &cookie.debug_handler_ex {
+            let debug_ex = unsafe { &*debug };
+            let file_str = if !debug_ex.file.is_null() {
+                unsafe { CStr::from_ptr(debug_ex.file).to_string_lossy() }
+            } else {
+                "null".into()
+            };
+            log::debug!("gfxstream_debug_callback_ex triggered: file={}", file_str);
+            let rutabaga_debug = RutabagaDebugEx {
+                debug_type: debug_ex.debug_type,
+                file: debug_ex.file,
+                line: debug_ex.line,
+                function: debug_ex.function,
+                message: debug_ex.message,
+            };
+            handler.call(rutabaga_debug);
+        }
+    })
+    .unwrap_or_else(|_| abort())
+}
+
 impl Gfxstream {
     pub fn init(
         display_width: u32,
@@ -435,12 +473,16 @@ impl Gfxstream {
         gfxstream_features: Option<String>,
         fence_handler: RutabagaFenceHandler,
         debug_handler: Option<RutabagaDebugHandler>,
+        debug_handler_ex: Option<RutabagaDebugHandlerEx>,
     ) -> RutabagaResult<Box<dyn RutabagaComponent>> {
         let use_debug = debug_handler.is_some();
+        let use_debug_ex = debug_handler_ex.is_some();
+
         let mut cookie = Box::new(RutabagaCookie {
             render_server_fd: None,
             fence_handler: Some(fence_handler),
             debug_handler,
+            debug_handler_ex,
             rutabaga_paths: None,
         });
 
@@ -469,10 +511,15 @@ impl Gfxstream {
             },
         ]);
 
-        if use_debug {
+        if use_debug_ex {
+            stream_renderer_params.push(stream_renderer_param {
+                key: STREAM_RENDERER_PARAM_DEBUG_CALLBACK_EX,
+                value: gfxstream_debug_callback_ex as *const () as usize as u64,
+            });
+        } else if use_debug {
             stream_renderer_params.push(stream_renderer_param {
                 key: STREAM_RENDERER_PARAM_DEBUG_CALLBACK,
-                value: gfxstream_debug_callback as usize as u64,
+                value: gfxstream_debug_callback as *const () as usize as u64,
             });
         }
 

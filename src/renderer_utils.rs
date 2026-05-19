@@ -7,6 +7,7 @@
 use mesa3d_util::OwnedDescriptor;
 
 use crate::rutabaga_utils::RutabagaDebugHandler;
+use crate::rutabaga_utils::RutabagaDebugHandlerEx;
 use crate::rutabaga_utils::RutabagaError;
 use crate::rutabaga_utils::RutabagaFenceHandler;
 use crate::rutabaga_utils::RutabagaResult;
@@ -36,5 +37,6 @@ pub struct RutabagaCookie {
     pub fence_handler: Option<RutabagaFenceHandler>,
     #[allow(dead_code)]
     pub debug_handler: Option<RutabagaDebugHandler>,
+    pub debug_handler_ex: Option<RutabagaDebugHandlerEx>,
     pub rutabaga_paths: Option<RutabagaPaths>,
 }

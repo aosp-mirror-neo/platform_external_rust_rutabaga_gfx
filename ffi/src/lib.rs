@@ -116,6 +116,8 @@ type rutabaga_fence = RutabagaFence;
 
 #[allow(non_camel_case_types)]
 type rutabaga_debug = RutabagaDebug;
+#[allow(non_camel_case_types)]
+type rutabaga_debug_ex = rutabaga_gfx::RutabagaDebugEx;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -166,6 +168,8 @@ pub type rutabaga_fence_callback = extern "C" fn(user_data: u64, fence: &rutabag
 
 #[allow(non_camel_case_types)]
 pub type rutabaga_debug_callback = extern "C" fn(user_data: u64, debug: &rutabaga_debug);
+#[allow(non_camel_case_types)]
+pub type rutabaga_debug_callback_ex = extern "C" fn(user_data: u64, debug: &rutabaga_debug_ex);
 
 #[repr(C)]
 pub struct rutabaga_builder<'a> {
@@ -174,6 +178,7 @@ pub struct rutabaga_builder<'a> {
     pub wsi: u64,
     pub fence_cb: rutabaga_fence_callback,
     pub debug_cb: Option<rutabaga_debug_callback>,
+    pub debug_cb_ex: Option<rutabaga_debug_callback_ex>,
     pub channels: Option<&'a rutabaga_channels>,
     pub renderer_features: *const c_char,
     pub display_width: u32,
@@ -192,6 +197,13 @@ fn create_ffi_debug_handler(
     debug_cb: rutabaga_debug_callback,
 ) -> RutabagaDebugHandler {
     RutabagaDebugHandler::new(move |rutabaga_debug| debug_cb(user_data, &rutabaga_debug))
+}
+
+fn create_ffi_debug_handler_ex(
+    user_data: u64,
+    debug_cb: rutabaga_debug_callback_ex,
+) -> rutabaga_gfx::RutabagaDebugHandlerEx {
+    rutabaga_gfx::RutabagaDebugHandlerEx::new(move |rutabaga_debug| debug_cb(user_data, &rutabaga_debug))
 }
 
 #[no_mangle]
@@ -229,6 +241,25 @@ pub unsafe extern "C" fn rutabaga_init(builder: &rutabaga_builder, ptr: &mut *mu
             let debug_handler = create_ffi_debug_handler(builder.user_data, func);
             let _ = S_DEBUG_HANDLER.set(Mutex::new(debug_handler.clone()));
             debug_handler_opt = Some(debug_handler);
+        } else if let Some(func_ex) = builder.debug_cb_ex {
+            let user_data = builder.user_data;
+            let debug_handler = RutabagaDebugHandler::new(move |rutabaga_debug| {
+                let debug_ex = rutabaga_gfx::RutabagaDebugEx {
+                    debug_type: rutabaga_debug.debug_type,
+                    file: b"unknown\0".as_ptr() as *const std::os::raw::c_char,
+                    line: 0,
+                    function: b"<unknown>\0".as_ptr() as *const std::os::raw::c_char,
+                    message: rutabaga_debug.message,
+                };
+                func_ex(user_data, &debug_ex);
+            });
+            let _ = S_DEBUG_HANDLER.set(Mutex::new(debug_handler.clone()));
+        }
+
+        let mut debug_handler_ex_opt: Option<rutabaga_gfx::RutabagaDebugHandlerEx> = None;
+        if let Some(func) = builder.debug_cb_ex {
+            let debug_handler = create_ffi_debug_handler_ex(builder.user_data, func);
+            debug_handler_ex_opt = Some(debug_handler);
         }
 
         let mut rutabaga_paths_opt = None;
@@ -278,6 +309,7 @@ pub unsafe extern "C" fn rutabaga_init(builder: &rutabaga_builder, ptr: &mut *mu
             .set_use_egl(true)
             .set_wsi(rutabaga_wsi)
             .set_debug_handler(debug_handler_opt)
+            .set_debug_handler_ex(debug_handler_ex_opt)
             .set_rutabaga_paths(rutabaga_paths_opt)
             .set_renderer_features(renderer_features_opt);
         if builder.display_width != 0 {

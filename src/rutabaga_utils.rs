@@ -173,6 +173,28 @@ pub struct RutabagaDebug {
     pub message: *const c_char,
 }
 
+/// Extended debug data with location information.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RutabagaDebugEx {
+    /// The type of the debug message.
+    pub debug_type: u32,
+    /// The source file where the log was generated.
+    pub file: *const std::os::raw::c_char,
+    /// The line number in the source file.
+    pub line: std::os::raw::c_int,
+    /// The function name where the log was generated.
+    pub function: *const std::os::raw::c_char,
+    /// The actual log message.
+    pub message: *const std::os::raw::c_char,
+}
+
+// SAFETY: sketchy but mirrors C-API
+unsafe impl Send for RutabagaDebugEx {}
+// SAFETY: sketchy but mirrors C-API
+unsafe impl Sync for RutabagaDebugEx {}
+
+
 /// Rutabaga import flags
 pub const RUTABAGA_IMPORT_FLAG_3D_INFO: u32 = 1 << 0;
 pub const RUTABAGA_IMPORT_FLAG_VULKAN_INFO: u32 = 1 << 1;
@@ -678,3 +700,4 @@ impl<S> fmt::Debug for RutabagaHandler<S> {
 
 pub type RutabagaFenceHandler = RutabagaHandler<RutabagaFence>;
 pub type RutabagaDebugHandler = RutabagaHandler<RutabagaDebug>;
+pub type RutabagaDebugHandlerEx = RutabagaHandler<RutabagaDebugEx>;

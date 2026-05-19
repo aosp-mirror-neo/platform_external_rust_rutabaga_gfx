@@ -241,6 +241,24 @@ typedef void (*rutabaga_fence_callback)(uint64_t user_data, const struct rutabag
  */
 typedef void (*rutabaga_debug_callback)(uint64_t user_data, const struct rutabaga_debug *debug);
 
+/**
+ * Extended debug data with location information.
+ */
+struct rutabaga_debug_ex {
+    uint32_t type;      /**< The type of the debug message (e.g., error, warn, info). */
+    const char *file;   /**< The source file where the log was generated. */
+    int line;           /**< The line number in the source file. */
+    const char *function; /**< The function name where the log was generated. */
+    const char *message;  /**< The actual log message. */
+};
+
+/**
+ * # Safety
+ * - Throwing an exception inside this callback is not allowed.
+ * - `rutabaga_debug_ex` and contained values only valid for the duration of callback.
+ */
+typedef void (*rutabaga_debug_callback_ex)(uint64_t user_data, const struct rutabaga_debug_ex *debug);
+
 struct rutabaga_builder {
     // Required for correct functioning
     uint64_t user_data;
@@ -250,6 +268,7 @@ struct rutabaga_builder {
 
     // Optional for debugging.
     rutabaga_debug_callback debug_cb;
+    rutabaga_debug_callback_ex debug_cb_ex;
 
     // Optional and platform specific
     struct rutabaga_channels *channels;
