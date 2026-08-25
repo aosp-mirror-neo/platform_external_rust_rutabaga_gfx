@@ -1,0 +1,6 @@
+{
+    global:
+        rutabaga_*;
+    local:
+        *;
+};
