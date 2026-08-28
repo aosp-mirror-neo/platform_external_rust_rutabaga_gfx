@@ -75,12 +75,25 @@ rust_library(
     }),
 )
 
+cc_library(
+    name = "rutabaga_ffi_linkopts",
+    additional_linker_inputs = select({
+        "@platforms//os:linux": [":ffi/rutabaga_ffi.lds"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@platforms//os:linux": ["-Wl,--version-script=$(location :ffi/rutabaga_ffi.lds)"],
+        "//conditions:default": [],
+    }),
+)
+
 rust_shared_library(
     name = "rutabaga_ffi",
     srcs = ["ffi/src/lib.rs"],
     edition = "2021",
     rustc_flags = ["--cfg=goldfish"],
     deps = [
+        ":rutabaga_ffi_linkopts",
         ":rutabaga_gfx",
         "@libc",
         "@log",
